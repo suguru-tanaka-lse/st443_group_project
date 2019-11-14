@@ -1,0 +1,109 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if(!require(matlib)) install.packages("matlib")
+if(!require(corpcor)) install.packages("corpcor")
+if(!require(MASS)) install.packages("MASS")
+if(!require(glmnet)) install.packages("glmnet")
+library('matlib')
+library('corpcor')
+library('MASS')
+library('glmnet')
+```
+
+```{r set number}
+set.seed(10)
+p=sample(x=1:10,size=1)
+p=as.numeric(p)
+n=sample(x=1:15,size=1)
+n=as.numeric(n)
+```
+
+```{r before approaches,echo=FALSE}
+#create covariance matrix
+creat_num=function() {
+  a=sample(x=c(0.5,0),prob=c(0.1,0.9),size=1,replace=T)
+  return(a)
+}
+I=diag(p)
+row_fill=1
+col_fill=2
+matrix_fill=function(){
+  repeat{
+    if(row_fill==p)
+      break
+    repeat{
+      if(col_fill==p+1)
+        break
+      I[row_fill,col_fill]=creat_num()
+      col_fill=col_fill+1
+    }
+      row_fill = row_fill + 1
+      col_fill = row_fill + 1
+    }
+  return(I)
+}
+theta=matrix_fill()
+theta[lower.tri(theta)]=t(theta)[lower.tri(theta)]
+
+repeat{
+  if(is.positive.definite(theta)==T)
+    break
+  theta=theta+I
+}
+
+theta_cor=cov2cor(theta)
+sigma=inv(theta_cor)
+#generate random samples
+rv=mvrnorm(n=n,mu=rep(0,p),Sigma=sigma)
+index=paste("X",1:p,sep="")
+colnames(rv)=paste("X",1:p,sep="")
+rownames(rv)=c(1:n)
+rvdf=data.frame(rv)
+```
+
+```{r lasso1-example,echo=FALSE,warning=FALSE}
+y=rvdf$X2
+x=model.matrix(X2~.,data=rvdf)[,-1]
+model.lasso=glmnet(x,y)
+#plot(model.lasso)
+cv.lasso=cv.glmnet(x,y)
+best=cv.lasso$lambda[which.min(cv.lasso$cvm)]
+best
+#Validaion set approach to select best lambda in Lasso
+train=sample(seq(n),round(n-n/3,0),replace=FALSE)
+lasso.train=glmnet(x[train,],y[train])
+pred.test=predict(lasso.train,x[-train,])
+rmse=sqrt(apply((y[-train]-pred.test)^2,2,mean))
+#plot(log(lasso.train$lambda),rmse,type="b",xlab="log(lambda)")
+lambda.best=lasso.train$lambda[order(rmse)[1]]
+lambda.best
+```
+
+```{r node-wise lasso 1,echo=FALSE}
+lasso1=function(i){
+  #i = 1
+  y=rvdf %>% select(i)
+  x = rvdf %>% select(-i)
+  x = as.matrix(x)
+  y = as.matrix(y)
+  #plot(cv.glmnet(x, y, intercept=FALSE))
+  best_lambda = cv.glmnet(x,y,intercept=FALSE)$lambda.min
+  coef = coef(glmnet(x,y,lambda=best_lambda, intercept=FALSE))
+  return(as.matrix(coef))
+}
+
+for (i in seq(from = p, to = 1)){
+  if ( i == p ){
+    result = as.data.frame(t(lasso1(i)))
+  } else {
+    t_coef = as.data.frame(t(lasso1(i)))
+    result = join(t_coef, result, type = "full")
+  }
+}
+result = result[, -1]
+result = result[, order(nrow(result):1)]
+
+col_list = sort(colnames(result))
+result = result[, col_list]
+```
+
