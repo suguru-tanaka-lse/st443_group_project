@@ -7,7 +7,7 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-if(!require(matlib)) install.packages("matlib")
+if(!require(matlib)) install.packages("matlib") 111
 if(!require(corpcor)) install.packages("corpcor")
 if(!require(MASS)) install.packages("MASS")
 if(!require(glmnet)) install.packages("glmnet")
@@ -18,7 +18,7 @@ library('glmnet')
 ```
 
 ```{r set number}
-set.global.seed(9)
+set.seed(9)
 p=sample(x=1:10,size=1)
 p=as.numeric(p)
 n=sample(x=1:15,size=1)
@@ -68,7 +68,7 @@ rvdf=data.frame(rv)
 ```
 
 ```{r lasso1-example,echo=FALSE,warning=FALSE}
-y=rvdf$X2
+y=rvdf$X2 
 x=model.matrix(X2~.,data=rvdf)[,-1]
 model.lasso=glmnet(x,y)
 #plot(model.lasso)
