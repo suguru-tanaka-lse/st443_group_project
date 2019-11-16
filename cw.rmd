@@ -1,28 +1,30 @@
----
-title: "Untitled"
-author: "Eli Hu"
-date: "8 November 2019"
-output: pdf_document
----
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-if(!require(matlib)) install.packages("matlib") 111
+if(!require(matlib)) install.packages("matlib")
 if(!require(corpcor)) install.packages("corpcor")
 if(!require(MASS)) install.packages("MASS")
 if(!require(glmnet)) install.packages("glmnet")
+if(!require(dplyr)) install.packages("dplyr")
+if(!require(plyr)) install.packages("plyr")
+if(!require(ROCR)) install.packages("ROCR")
+if(!require(ROCit)) install.packages("ROCit")
 library('matlib')
 library('corpcor')
 library('MASS')
 library('glmnet')
+library('dplyr')
+library('plyr')
+library('ROCR')
+library('ROCit')
 ```
 
 ```{r set number}
-set.seed(9)
+set.seed(10)
 p=sample(x=1:10,size=1)
 p=as.numeric(p)
 n=sample(x=1:15,size=1)
 n=as.numeric(n)
+??Rev
 ```
 
 ```{r before approaches,echo=FALSE}
@@ -56,7 +58,6 @@ repeat{
     break
   theta=theta+I
 }
-
 theta_cor=cov2cor(theta)
 sigma=inv(theta_cor)
 #generate random samples
@@ -67,39 +68,146 @@ rownames(rv)=c(1:n)
 rvdf=data.frame(rv)
 ```
 
-```{r lasso1-example,echo=FALSE,warning=FALSE}
-y=rvdf$X2 
-x=model.matrix(X2~.,data=rvdf)[,-1]
-model.lasso=glmnet(x,y)
-#plot(model.lasso)
-cv.lasso=cv.glmnet(x,y)
-best=cv.lasso$lambda[which.min(cv.lasso$cvm)]
-best
-#Validaion set approach to select best lambda in Lasso
-train=sample(seq(n),round(n-n/3,0),replace=FALSE)
-lasso.train=glmnet(x[train,],y[train])
-pred.test=predict(lasso.train,x[-train,])
-rmse=sqrt(apply((y[-train]-pred.test)^2,2,mean))
-#plot(log(lasso.train$lambda),rmse,type="b",xlab="log(lambda)")
-lambda.best=lasso.train$lambda[order(rmse)[1]]
-lambda.best
-```
+```{r node-wise lasso 1,echo=FALSE,warning=FALSE}
 
-```{r node-wise lasso 1,echo=FALSE}
-lasso1=function(i){
-  y=rvdf$Xi
-  x=model.matrix(Xi~.,data=rvdf)[,-1]
-  model.lassoi=glmnet(x,y)
-  cv.lassoi=cv.glmnet(x,y)
-  coef(glmnet(x,y,lambda=cv.lasso$lambda.min))
-  set.seed(1)
+#I find that we may go wrong direction because ROC curve need different thresholds, which means we need lots of lambda values to ROC curve(one lambda can only generate one point in ROC), So I have changed input in lasso1 function to get different outcomes. 
+lasso1=function(i,l){
+  #l means lambda
+  y=rvdf %>% select(i)
+  x = rvdf %>% select(-i)
+  x = as.matrix(x)
+  y = as.matrix(y)
+  #plot(cv.glmnet(x, y, intercept=FALSE))
+  best_lambda =cv.glmnet(x,y,intercept=FALSE)$lambda.min
+  best_lambda
+  #coef = coef(glmnet(x,y,lambda=best_lambda, intercept=FALSE))
+  coef = coef(glmnet(x,y,lambda=l, intercept=FALSE))
+  coef = as.matrix(coef)
+  return(coef)
 }
 
-coef.lasso=coef(model.lasso)
-coef.lasso=coef.lasso[coef.lasso!=0]
-coef.lasso
-cv.lasso=cv.glmnet(x,y)
-plot(cv.lasso)
+#here we assume that lambda=0.5, I have no idea about the range of lamba we need to choose
+result=function(l){
+  pred = as.data.frame(t(lasso1(1,l)))
+  for (i in seq(2:p)){
+    t_coef = as.data.frame(t(lasso1(i,l)))
+    pred = join(t_coef, pred, type = "full")
+  }
+  t_coef = as.data.frame(t(lasso1(p,l)))
+  pred = join(t_coef, pred, type = "full")
+  pred = pred[, -1]
+  pred=pred[seq(dim(pred)[1],1),]
+  rownames(pred)=paste("Beta(",1:p,",",sep="")
+  colnames(pred)=paste(",",1:p,")",sep="") 
+  #turn the matrix to T&F to make count convient
+  pred = pred!=0
+  return(pred)
+}
+#now to find E_1 and E_2,which are the same as node-wise1 and node-wise2
+E_1_finder=function(l){
+  E_1=c()
+  result=result(l)
+  repeat{
+    if(row_fill==p)
+      break
+    repeat{
+      if(col_fill==p+1)
+        break
+      if(result[row_fill,col_fill]== TRUE && result[col_fill,row_fill]==TRUE)
+        E_1=c(E_1,paste("(",row_fill,",",col_fill,")",sep=""))
+      col_fill=col_fill+1
+    }
+    row_fill=row_fill+1
+    col_fill=row_fill+1
+  }
+  return(E_1)
+}
 
+E_2_finder=function(l){
+  E_2=c()
+  result=result(l)
+  repeat{
+    if(row_fill==p)
+      break
+    repeat{
+      if(col_fill==p+1)
+        break
+      if(result[row_fill,col_fill] == TRUE | result[col_fill,row_fill]==TRUE)
+        E_2=c(E_2,paste("(",row_fill,",",col_fill,")",sep=""))
+      col_fill=col_fill+1
+    }
+    row_fill=row_fill+1
+    col_fill=row_fill+1
+  }
+  return(E_2)
+}
+
+#I want to creat the confusion matrix,The codes below ignore the value in diagonal
+sigma2=sigma!=0
+cf_mat=function(actu,pred){
+  actuT_predT=0
+  actuT_predF=0
+  actuF_predT=0
+  actuF_predF=0
+  repeat{
+    if(row_fill == p)
+      break
+    repeat{
+      if(col_fill == p+1)
+        break
+      if(pred[row_fill,col_fill] == actu[row_fill,col_fill])
+        if(actu[row_fill,col_fill] == TRUE)
+          actuT_predT = actuT_predT + 1
+        else
+          actuF_predF = actuF_predF + 1
+      if(pred[row_fill,col_fill] != actu[row_fill,col_fill])
+        if(actu[row_fill,col_fill] == TRUE)
+          actuT_predF = actuT_predF + 1
+        else
+          actuF_predT = actuF_predT + 1
+      if(pred[col_fill,row_fill] == actu[col_fill,row_fill])
+        if(actu[row_fill,col_fill] == TRUE)
+          actuT_predT = actuT_predT + 1
+        else
+          actuF_predF = actuF_predF + 1
+      if(pred[col_fill,row_fill] != actu[col_fill,row_fill])
+        if(actu[row_fill,col_fill] == TRUE)
+          actuT_predF = actuT_predF + 1
+        else
+          actuF_predT = actuF_predT + 1
+      col_fill=col_fill+1
+    }
+    row_fill=row_fill+1
+    col_fill=row_fill+1
+  }
+  cf = matrix(c(actuT_predT,actuT_predF,actuF_predT,actuF_predF),nrow=2,byrow=TRUE)
+  colnames(cf)=c("Predict edge exist","Predict edge not exist")
+  rownames(cf)=c("Actual edge exist","Actual edge not exist")
+  return(cf)
+}
+
+#try function below, hope it works
+#E_2_finder(l=0.5)
+#E_1_finder(l=0.5)
+#cf_mat(sigma2,result(l=0.5))
+
+#the problem till now is that it seems that we need focus a range of lambda to creat ROC curve. 
+#Till now I find confustion table cannot help us in ROC,but maybe helpful in the report.
+#Below is what I have tried, I set lambda from 0.5 to 1.5, divided into 100 value. but there is problem in the prediction function.
+lambda=seq(0.5,1.5,length.out = 100)
+result2=function(){
+  for (i in lambda){
+    pred=as.vector(na.exclude(as.vector(result(1))))
+    result(1)
+    return(result)
+  }
+}
+predict=function(){
+  sigma2=sigma!=0
+  diag(sigma2)=NA
+  sigma2=as.vector(na.exclude(as.vector(sigma2)))
+  return(prediction(result2(),sigma2,lambda))
+}
+#it seems that our function cannot be used in some general ROC function, we may need to calculate tpr,fpr for different lambda and plot them maybe.I will continous on this on Sunday.
 ```
 
