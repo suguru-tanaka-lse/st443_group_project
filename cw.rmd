@@ -16,14 +16,22 @@ library('dplyr')
 library('plyr')
 library('ROCR')
 library('ROCit')
+library('ggplot2')
 ```
 
 ```{r set number}
 set.seed(10)
-p=sample(x=1:10,size=1)
-p=as.numeric(p)
-n=sample(x=1:15,size=1)
-n=as.numeric(n)
+#p=sample(x=1:10,size=1)
+#p=as.numeric(p)
+#n=sample(x=1:15,size=1)
+#n=as.numeric(n)
+n=50
+p=30
+#loglambda=seq(-5,500,length.out = 50)
+lambda=exp(loglambda)
+lambda=seq(0.01,10,length.out = 50)
+magnitude = seq(-4, 1, by = 0.05)
+lambda = 10 ^ magnitude
 ??Rev
 ```
 
@@ -66,6 +74,7 @@ index=paste("X",1:p,sep="")
 colnames(rv)=paste("X",1:p,sep="")
 rownames(rv)=c(1:n)
 rvdf=data.frame(rv)
+sigma2=sigma!=0
 ```
 
 ```{r node-wise lasso 1,echo=FALSE,warning=FALSE}
@@ -78,8 +87,6 @@ lasso1=function(i,l){
   x = as.matrix(x)
   y = as.matrix(y)
   #plot(cv.glmnet(x, y, intercept=FALSE))
-  best_lambda =cv.glmnet(x,y,intercept=FALSE)$lambda.min
-  best_lambda
   #coef = coef(glmnet(x,y,lambda=best_lambda, intercept=FALSE))
   coef = coef(glmnet(x,y,lambda=l, intercept=FALSE))
   coef = as.matrix(coef)
@@ -89,12 +96,11 @@ lasso1=function(i,l){
 #here we assume that lambda=0.5, I have no idea about the range of lamba we need to choose
 result=function(l){
   pred = as.data.frame(t(lasso1(1,l)))
-  for (i in seq(2:p)){
+  for (i in seq(2,p)){
     t_coef = as.data.frame(t(lasso1(i,l)))
-    pred = join(t_coef, pred, type = "full")
+    t_coef[1,1]=i
+    pred = suppressMessages(join(t_coef, pred, type = "full"))
   }
-  t_coef = as.data.frame(t(lasso1(p,l)))
-  pred = join(t_coef, pred, type = "full")
   pred = pred[, -1]
   pred=pred[seq(dim(pred)[1],1),]
   rownames(pred)=paste("Beta(",1:p,",",sep="")
@@ -143,8 +149,10 @@ E_2_finder=function(l){
 }
 
 #I want to creat the confusion matrix,The codes below ignore the value in diagonal
-sigma2=sigma!=0
-cf_mat=function(actu,pred){
+
+cf_mat_1=function(actu,pred){
+  row_fill = 1
+  col_fill = 2
   actuT_predT=0
   actuT_predF=0
   actuF_predT=0
@@ -155,26 +163,27 @@ cf_mat=function(actu,pred){
     repeat{
       if(col_fill == p+1)
         break
-      if(pred[row_fill,col_fill] == actu[row_fill,col_fill])
-        if(actu[row_fill,col_fill] == TRUE)
-          actuT_predT = actuT_predT + 1
-        else
-          actuF_predF = actuF_predF + 1
-      if(pred[row_fill,col_fill] != actu[row_fill,col_fill])
-        if(actu[row_fill,col_fill] == TRUE)
-          actuT_predF = actuT_predF + 1
-        else
-          actuF_predT = actuF_predT + 1
-      if(pred[col_fill,row_fill] == actu[col_fill,row_fill])
-        if(actu[row_fill,col_fill] == TRUE)
-          actuT_predT = actuT_predT + 1
-        else
-          actuF_predF = actuF_predF + 1
-      if(pred[col_fill,row_fill] != actu[col_fill,row_fill])
-        if(actu[row_fill,col_fill] == TRUE)
-          actuT_predF = actuT_predF + 1
-        else
-          actuF_predT = actuF_predT + 1
+      if(pred[row_fill,col_fill] == actu[row_fill,col_fill]&&pred[col_fill,row_fill] == actu[col_fill,row_fill]){
+        if(actu[row_fill,col_fill] == TRUE){
+          actuT_predT = actuT_predT + 1}
+        else{
+          actuF_predF = actuF_predF + 1}}
+      else if(pred[row_fill,col_fill] != actu[row_fill,col_fill]&&pred[col_fill,row_fill] != actu[col_fill,row_fill]){
+        if(actu[row_fill,col_fill] == TRUE){
+          actuT_predF = actuT_predF + 1}
+        else{
+          actuF_predT = actuF_predT + 1}}
+      else if(pred[row_fill,col_fill] == actu[row_fill,col_fill]&&pred[col_fill,row_fill] != actu[col_fill,row_fill]){
+        if(actu[row_fill,col_fill] == TRUE){
+          actuT_predF = actuT_predF + 1}
+        else{
+          actuF_predF = actuF_predF + 1}}
+      else if(pred[row_fill,col_fill] != actu[row_fill,col_fill]&&pred[col_fill,row_fill] == actu[col_fill,row_fill]){
+        if(actu[row_fill,col_fill] == TRUE){
+          actuT_predF = actuT_predF + 1}
+        else{
+          actuF_predF = actuF_predF + 1}}
+
       col_fill=col_fill+1
     }
     row_fill=row_fill+1
@@ -189,25 +198,29 @@ cf_mat=function(actu,pred){
 #try function below, hope it works
 #E_2_finder(l=0.5)
 #E_1_finder(l=0.5)
-#cf_mat(sigma2,result(l=0.5))
-
-#the problem till now is that it seems that we need focus a range of lambda to creat ROC curve. 
-#Till now I find confustion table cannot help us in ROC,but maybe helpful in the report.
-#Below is what I have tried, I set lambda from 0.5 to 1.5, divided into 100 value. but there is problem in the prediction function.
-lambda=seq(0.5,1.5,length.out = 100)
-result2=function(){
-  for (i in lambda){
-    pred=as.vector(na.exclude(as.vector(result(1))))
-    result(1)
-    return(result)
-  }
-}
-predict=function(){
-  sigma2=sigma!=0
-  diag(sigma2)=NA
-  sigma2=as.vector(na.exclude(as.vector(sigma2)))
-  return(prediction(result2(),sigma2,lambda))
-}
-#it seems that our function cannot be used in some general ROC function, we may need to calculate tpr,fpr for different lambda and plot them maybe.I will continous on this on Sunday.
+#cf_mat_1(sigma2,result(l=0.141111))
+#result(0.141111)
+#sigma2
 ```
 
+```{r,1}
+ROC=function(lambda){
+  for(l in lambda){
+    roc_=cf_mat_1(sigma2,result(l))
+    TPR=roc_[1,1]/(roc_[1,1]+roc_[1,2])
+    FPR=roc_[2,1]/(roc_[2,1]+roc_[2,2])
+    TPR_result = c(TPR_result, TPR)
+    FPR_result = c(FPR_result, FPR)
+  }
+  return(list("TPR_result" = TPR_result, "FPR_result" = FPR_result))
+}
+result_list = ROC(lambda)
+result_df=t(rbind(result_list[["TPR_result"]],result_list[["FPR_result"]]))
+result_df=as.data.frame(result_df)
+colnames(result_df) = c("TPR","FPR")
+View(result_df)
+lambda
+ggplot(result_df,aes(FPR, TPR))+geom_line()
+
+
+```
