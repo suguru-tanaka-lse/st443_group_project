@@ -1,0 +1,188 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('matlib')
+library('corpcor')
+library('MASS')
+library('glmnet')
+library('dplyr')
+library('plyr')
+library('ROCR')
+library('ROCit')
+library('ggplot2')
+library('caret')
+library(MESS)
+library(e1071)
+```
+
+```{r set number}
+set.seed(10)
+n=50
+p=30
+magnitude = seq(-3, 0, by = 0.1)
+lambda = 10 ^ magnitude
+l = 0.3
+```
+
+```{r before approaches,echo=FALSE}
+#createe covariance matrix
+create_num=function() {
+  a=sample(x=c(0.5,0),prob=c(0.1,0.9),size=1,replace=T)
+  return(a)
+}
+make_theta = function(p){
+  I = diag(p)
+  theta = I
+  for (row in 1:nrow(I)){
+    for (col in 1:ncol(I)){
+      if (row < col + 1){
+        theta[row, col] <- create_num()
+      }
+    }
+  }
+  theta[lower.tri(theta)]=t(theta)[lower.tri(theta)]
+  repeat{
+    if(is.positive.definite(theta)==T){
+      break
+    } else {
+      theta=theta+I
+    }
+  }
+  theta = cov2cor(theta)
+  return(theta)
+}
+theta <- make_theta(p)
+sigma=inv(theta)
+#generate random samples
+rv=mvrnorm(n=n,mu=rep(0,p),Sigma=sigma)
+index=paste("X",1:p,sep="")
+colnames(rv)=paste("X",1:p,sep="")
+rownames(rv)=c(1:n)
+rvdf=data.frame(rv)
+theta_bool=theta!=0
+E <- theta_bool
+E[lower.tri(E, diag = TRUE)] <- NA
+```
+
+```{r node-wise lasso 1,echo=FALSE,warning=FALSE}
+#I find that we may go wrong direction because ROC curve need different thresholds, which means we need lots of lambda values to ROC curve(one lambda can only generate one point in ROC), So I have changed input in piece_lasso function to get different outcomes. 
+piece_lasso=function(i,l){
+  #l means lambda
+  y=rvdf %>% select(i)
+  x = rvdf %>% select(-i)
+  x = as.matrix(x)
+  y = as.matrix(y)
+  #plot(cv.glmnet(x, y, intercept=FALSE))
+  #coef = coef(glmnet(x,y,lambda=best_lambda, intercept=FALSE))
+  coef = coef(glmnet(x,y,lambda=l, intercept=FALSE))
+  coef = as.matrix(coef)
+  return(coef)
+}
+#here we assume that lambda=0.5, I have no idea about the range of lamba we need to choose
+full_lasso=function(l){
+  pred = as.data.frame(t(piece_lasso(1,l)))
+  for (i in seq(2,p)){
+    t_coef = as.data.frame(t(piece_lasso(i,l)))
+    t_coef[1,1]=i
+    pred = suppressMessages(join(t_coef, pred, type = "full"))
+  }
+  pred = pred[, -1]
+  pred=pred[seq(dim(pred)[1],1),]
+  rownames(pred)=paste("Beta(",1:p,",",sep="")
+  colnames(pred)=paste(",",1:p,")",sep="") 
+  #turn the matrix to T&F to make count convient
+  pred = pred!=0
+  return(pred)
+}
+
+#now to find E_1 and E_2,which are the same as node-wise1 and node-wise2
+E_1_finder=function(lasso_out){
+  row_fill = 1
+  col_fill = 2
+  res_matrix <- matrix(NA, nrow = p, ncol = p)
+  result = lasso_out
+  repeat{
+    if(row_fill==p)
+      break
+    repeat{
+      if(col_fill==p+1)
+        break
+      if(result[row_fill,col_fill]== TRUE && result[col_fill,row_fill]==TRUE)
+        res_matrix[row_fill, col_fill] <- TRUE
+      else
+        res_matrix[row_fill, col_fill] <- FALSE
+      col_fill=col_fill+1
+    }
+    row_fill=row_fill+1
+    col_fill=row_fill+1
+  }
+  return(res_matrix)
+}
+E_2_finder=function(lasso_out){
+  row_fill = 1
+  col_fill = 2
+  res_matrix <- matrix(NA, nrow = p, ncol = p)
+  result = lasso_out
+  repeat{
+    if(row_fill==p)
+      break
+    repeat{
+      if(col_fill==p+1)
+        break
+      if(result[row_fill,col_fill] == TRUE | result[col_fill,row_fill]==TRUE)
+        res_matrix[row_fill, col_fill] <- TRUE
+      else
+        res_matrix[row_fill, col_fill] <- FALSE
+      col_fill=col_fill+1
+    }
+    row_fill=row_fill+1
+    col_fill=row_fill+1
+  }
+  return(res_matrix)
+}
+
+get_confusion_matrix = function(pred_matrix, real_matrix){
+  pred_vector <- factor(pred_matrix, levels = c('TRUE', 'FALSE'))
+  pred_vector <- pred_vector[!is.na(pred_vector)]
+  real_vector <- factor(real_matrix, levels = c('TRUE', 'FALSE'))
+  real_vector <- real_vector[!is.na(real_vector)]
+  out <- confusionMatrix(pred_vector, real_vector, positive = 'TRUE')
+  result <- out[['table']]
+  return(result)
+}
+
+lasso_out <- full_lasso(l)
+E_1 <- E_1_finder(lasso_out)
+E_2 <- E_2_finder(lasso_out)
+conf_E1 <- get_confusion_matrix(E_1, E)
+conf_E2 <- get_confusion_matrix(E_2, E)
+```
+
+```{r,1}
+get_ROC=function(lambda, method){
+  TPR_result <- c()
+  FPR_result <- c()
+  if (method == 'E1'){
+    method <- E_1_finder
+  } else if (method == 'E2'){
+    method <- E_2_finder
+  }
+  for(l in lambda){
+    lasso_out <- full_lasso(l)
+    pred_E <- method(lasso_out)
+    conf_E <- get_confusion_matrix(pred_E, E)
+    TPR= conf_E[1,1]/(conf_E[1,1] + conf_E[2,1])
+    FPR= conf_E[1,2]/(conf_E[1,2] + conf_E[2,2])
+    TPR_result = c(TPR_result, TPR)
+    FPR_result = c(FPR_result, FPR)
+  }
+  result_matrix <- t(rbind(TPR_result, FPR_result))
+  result_df <- as.data.frame(result_matrix)
+  rownames(result_df) <- lambda
+  colnames(result_df) <- c("TPR","FPR")
+  return(result_df)
+}
+roc_df <- get_ROC(lambda, 'E1')
+ggplot(roc_df, aes(FPR, TPR)) + geom_line()
+auroc <- auc(roc_df$FPR, roc_df$TPR)
+auroc
+```
