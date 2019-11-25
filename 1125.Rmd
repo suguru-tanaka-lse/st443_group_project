@@ -1,0 +1,339 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r read libraries, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('matlib')
+library('corpcor')
+library('MASS')
+library('glmnet')
+library('dplyr')
+library('plyr')
+library('ROCR')
+library('ROCit')
+library('ggplot2')
+library('caret')
+library(MESS)
+library(e1071)
+library(glasso)
+```
+
+```{r set parameters}
+set.seed(10)
+n = 50
+p = 30
+lambda = 10 ^ seq(-3, 0, by = 0.1)
+```
+
+```{r before approaches,echo=FALSE}
+make_theta = function(p){ #make theta
+  I = diag(p)
+  theta = I
+  for (row in 1:nrow(I)){
+    for (col in 2:ncol(I)){
+      if (row < col){
+        theta[row, col] <- sample(x=c(0.5,0),prob=c(0.1,0.9),size=1,replace=T)
+      }
+    }
+  }
+  theta[lower.tri(theta)]=t(theta)[lower.tri(theta)]
+  repeat{
+    if(is.positive.definite(theta)==T){
+      break
+    } else {
+      theta=theta+I
+    }
+  }
+  theta = cov2cor(theta)
+  return(theta)
+}
+generate_rvdf = function(){ #generate random samples
+  rv=mvrnorm(n=n,mu=rep(0,p),Sigma=sigma)
+  index=paste("X",1:p,sep="")
+  colnames(rv)=paste("X",1:p,sep="")
+  rownames(rv)=c(1:n)
+  rvdf=data.frame(rv)
+  return(rvdf)
+}
+theta <- make_theta(p)
+sigma <- inv(theta)
+rvdf <- generate_rvdf()
+E <- (theta!=0)
+E[lower.tri(E, diag = TRUE)] <- NA
+```
+
+```{r node-wise lasso 1,echo=FALSE,warning=FALSE}
+piece_lasso=function(i,l){
+  #l means lambda
+  y = rvdf %>% select(i)
+  x = rvdf %>% select(-i)
+  x = as.matrix(x)
+  y = as.matrix(y)
+  coef = coef(glmnet(x,y,lambda=l, intercept=FALSE))
+  coef = as.matrix(coef)
+  return(coef)
+}
+full_lasso=function(l){
+  pred = as.data.frame(t(piece_lasso(1,l)))
+  for (i in seq(2,p)){
+    t_coef = as.data.frame(t(piece_lasso(i,l)))
+    t_coef[1,1]=i
+    pred = suppressMessages(join(t_coef, pred, type = "full"))
+  }
+  pred = pred[, -1]
+  pred = pred[seq(dim(pred)[1],1),]
+  rownames(pred) = paste("Beta(",1:p,",",sep="")
+  colnames(pred) = paste(",",1:p,")",sep="") 
+  pred = pred!=0 #turn the matrix to T&F to make count convient
+  return(pred)
+}
+#now to find E_1 and E_2,which are the same as node-wise1 and node-wise2
+E_1_finder = function(lasso_out){
+  row_fill = 1
+  col_fill = 2
+  res_matrix <- matrix(NA, nrow = p, ncol = p)
+  result = lasso_out
+  repeat{
+    if(row_fill==p)
+      break
+    repeat{
+      if(col_fill==p+1)
+        break
+      if(result[row_fill,col_fill]== TRUE && result[col_fill,row_fill]==TRUE)
+        res_matrix[row_fill, col_fill] <- TRUE
+      else
+        res_matrix[row_fill, col_fill] <- FALSE
+      col_fill=col_fill+1
+    }
+    row_fill=row_fill+1
+    col_fill=row_fill+1
+  }
+  return(res_matrix)
+}
+E_2_finder=function(lasso_out){
+  row_fill = 1
+  col_fill = 2
+  res_matrix <- matrix(NA, nrow = p, ncol = p)
+  result = lasso_out
+  repeat{
+    if(row_fill==p)
+      break
+    repeat{
+      if(col_fill==p+1)
+        break
+      if(result[row_fill,col_fill] == TRUE | result[col_fill,row_fill]==TRUE)
+        res_matrix[row_fill, col_fill] <- TRUE
+      else
+        res_matrix[row_fill, col_fill] <- FALSE
+      col_fill=col_fill+1
+    }
+    row_fill=row_fill+1
+    col_fill=row_fill+1
+  }
+  return(res_matrix)
+}
+
+get_confusion_matrix = function(pred_matrix, real_matrix){
+  pred_vector <- factor(pred_matrix, levels = c('TRUE', 'FALSE'))
+  pred_vector <- pred_vector[!is.na(pred_vector)]
+  real_vector <- factor(real_matrix, levels = c('TRUE', 'FALSE'))
+  real_vector <- real_vector[!is.na(real_vector)]
+  out <- confusionMatrix(pred_vector, real_vector, positive = 'TRUE')
+  result <- out[['table']]
+  return(result)
+}
+
+lasso_out <- full_lasso(l)
+E_1 <- E_1_finder(lasso_out)
+E_2 <- E_2_finder(lasso_out)
+conf_E1 <- get_confusion_matrix(E_1, E)
+conf_E2 <- get_confusion_matrix(E_2, E)
+```
+
+```{r,1}
+get_ROC=function(lambda, method){
+  TPR_result <- c()
+  FPR_result <- c()
+  if (method == 'E1'){
+    method <- E_1_finder
+  } else if (method == 'E2'){
+    method <- E_2_finder
+  }
+  for(l in lambda){
+    lasso_out <- full_lasso(l)
+    pred_E <- method(lasso_out)
+    conf_E <- get_confusion_matrix(pred_E, E)
+    TPR= conf_E[1,1]/(conf_E[1,1] + conf_E[2,1])
+    FPR= conf_E[1,2]/(conf_E[1,2] + conf_E[2,2])
+    TPR_result = c(TPR_result, TPR)
+    FPR_result = c(FPR_result, FPR)
+  }
+  result_matrix <- t(rbind(lambda, TPR_result, FPR_result))
+  result_df <- as.data.frame(result_matrix)
+  #rownames(result_df) <- lambda
+  colnames(result_df) <- c("lambda", "TPR","FPR")
+  return(result_df)
+}
+roc_df <- get_ROC(lambda, 'E2')
+ggplot(roc_df, aes(FPR, TPR)) + geom_line() + geom_point() + 
+  geom_label(aes(label = round(lambda,2)), label.size = 0.005, nudge_x = 0.02, nudge_y = 0.05)
+auroc <- auc(roc_df$FPR, roc_df$TPR)
+auroc
+```
+```{r, choosing best lambda}
+get_accuracy = function(lambda, method){
+  accuracy_result <- c()
+  if (method == 'E1'){
+    method <- E_1_finder
+  } else if (method == 'E2'){
+    method <- E_2_finder
+  }
+  for(l in lambda){
+    lasso_out <- full_lasso(l)
+    pred_E <- method(lasso_out)
+    conf_E <- get_confusion_matrix(pred_E, E)
+    true_count <- conf_E[1,1] + conf_E[2,2]
+    false_count <- conf_E[1,2] + conf_E[2,1]
+    accuracy = true_count / (true_count + false_count)
+    accuracy_result = c(accuracy_result, accuracy)
+  }
+  result_matrix <- t(rbind(lambda, accuracy_result))
+  result_df <- as.data.frame(result_matrix)
+  colnames(result_df) <- c("lambda","accuracy")
+  return(result_df)
+}
+accuracy_df <- get_accuracy(lambda, 'E2')
+ggplot(accuracy_df, aes(lambda, accuracy)) + geom_line()
+```
+```{r, choosing best lambda2}
+get_f1 = function(lambda, method){
+  start.time <- Sys.time()
+  f1_result <- c()
+  if (method == 'E1'){
+    method <- E_1_finder
+  } else if (method == 'E2'){
+    method <- E_2_finder
+  }
+  for(l in lambda){
+    lasso_out <- full_lasso(l)
+    pred_E <- method(lasso_out)
+    conf_E <- get_confusion_matrix(pred_E, E)
+    precision <- conf_E[1,1] / (conf_E[1,1] +  conf_E[1,2])
+    recall <- conf_E[1,1] / (conf_E[1,1] +  conf_E[2,1])
+    f1 <- 2 * (precision * recall) / (precision + recall)
+    f1_result = c(f1_result, f1)
+  }
+  result_matrix <- t(rbind(lambda, f1_result))
+  result_df <- as.data.frame(result_matrix)
+  colnames(result_df) <- c("lambda","f1_score")
+  end.time <- Sys.time()
+  print(end.time - start.time)
+  #return(result_df)
+  optimal_lambda <- (result_df %>% top_n(1, f1_score))[['lambda']]
+  highest_f1 <- (result_df %>% top_n(1, f1_score))[['f1_score']]
+  return(list(result_df = result_df, optimal_lambda = optimal_lambda, highest_f1 = highest_f1))
+}
+f1_out <- get_f1(lambda, 'E2')
+f1_out[['optimal_lambda']]
+f1_out[['highest_f1']]
+ggplot(f1_out[['result_df']], aes(lambda, f1_score)) + geom_line()
+FPR <- roc_df[roc_df$lambda == f1_out[['optimal_lambda']],]$FPR
+FNR <- 1- roc_df[roc_df$lambda == f1_out[['optimal_lambda']],]$TPR
+FPR
+```
+
+```{r, graphical lasso}
+get_E3 <- function(l){
+  sigma_hat <- cov(rvdf)
+  glasso_out <- glasso(sigma_hat, l)
+  theta_hat <- glasso_out$wi
+  theta_hat_bool= (theta_hat !=0)
+  theta_hat_bool[lower.tri(theta_hat_bool, diag = TRUE)] <- NA
+  return(theta_hat_bool)
+}
+theta_hat_bool <- get_E3(0.03)
+conf_matrix <- get_confusion_matrix(theta_hat_bool, E)
+get_f1_glasso <- function(confusion_matrix){
+  conf <- confusion_matrix
+  precision <- conf[1,1] / (conf[1,1] +  conf[1,2])
+  recall <- conf[1,1] / (conf[1,1] +  conf[2,1])
+  f1 <- 2 * (precision * recall) / (precision + recall)
+  return(f1)
+}
+
+get_f1_glasso(conf_matrix)
+```
+
+
+```{r}
+get_ROC_G=function(lambda){
+  TPR_result <- c()
+  FPR_result <- c()
+  for(l in lambda){
+    pred_E <- get_E3(l)
+    conf_E <- get_confusion_matrix(pred_E, E)
+    TPR= conf_E[1,1]/(conf_E[1,1] + conf_E[2,1])
+    FPR= conf_E[1,2]/(conf_E[1,2] + conf_E[2,2])
+    TPR_result = c(TPR_result, TPR)
+    FPR_result = c(FPR_result, FPR)
+  }
+  result_matrix <- t(rbind(TPR_result, FPR_result))
+  result_df <- as.data.frame(result_matrix)
+  rownames(result_df) <- lambda
+  colnames(result_df) <- c("TPR","FPR")
+  return(result_df)
+}
+roc_df <- get_ROC_G(lambda)
+ggplot(roc_df, aes(FPR, TPR)) + geom_line()
+auroc <- auc(roc_df$FPR, roc_df$TPR)
+auroc
+```
+```{r,f1_g}
+get_f1_G = function(lambda){
+  start.time <- Sys.time()
+  f1_result <- c()
+  for(l in lambda){
+    pred_E <- get_E3(l)
+    conf_E <- get_confusion_matrix(pred_E, E)
+    precision <- conf_E[1,1] / (conf_E[1,1] +  conf_E[1,2])
+    recall <- conf_E[1,1] / (conf_E[1,1] +  conf_E[2,1])
+    f1 <- 2 * (precision * recall) / (precision + recall)
+    f1_result = c(f1_result, f1)
+  }
+  result_matrix <- t(rbind(lambda, f1_result))
+  result_df <- as.data.frame(result_matrix)
+  colnames(result_df) <- c("lambda","f1_score")
+  end.time <- Sys.time()
+  print(end.time - start.time)
+  optimal_lambda <- (result_df %>% top_n(1, f1_score))[['lambda']]
+  highest_f1 <- (result_df %>% top_n(1, f1_score))[['f1_score']]
+  return(list(result_df = result_df, optimal_lambda = optimal_lambda, highest_f1 = highest_f1))
+}
+out_f1_G <- get_f1_G(lambda)
+out_f1_G[['optimal_lambda']]
+out_f1_G[['highest_f1']]
+
+```
+
+```{r, 50 times replicate}
+E1_f1 <- c()
+E2_f1 <- c()
+E3_f1 <- c()
+
+for (i in 1:50){
+  rvdf <- generate_rvdf()
+  E <- (theta!=0)
+  E[lower.tri(E, diag = TRUE)] <- NA
+  E1_f1_score <- get_f1(lambda, 'E1')[['highest_f1']]
+  E2_f1_score <- get_f1(lambda, 'E2')[['highest_f1']]
+  E3_f1_score <- get_f1_G(lambda)[['highest_f1']]
+  E1_f1 <- c(E1_f1, E1_f1_score)
+  E2_f1 <- c(E2_f1, E2_f1_score)
+  E3_f1 <- c(E3_f1, E3_f1_score)
+}
+
+E1_f1_score <- get_f1(lambda, 'E1')
+E1_f1_score
+```
