@@ -1,0 +1,95 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r read libraries, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("lib.R")
+```
+
+
+```{r set parameters}
+set.seed(10)
+n = 50
+p = 30
+lambda = 10 ^ seq(-3, 0, by = 0.1)
+l = 0.1 # l represents one particular lambda.
+```
+
+```{r before approaches,echo=FALSE}
+theta <- make_theta(p)
+sigma <- inv(theta)
+rvdf <- generate_rvdf(n, sigma)
+# E represends the real connected edge in upper triangle matrix of coefficients
+E <- (theta!=0) 
+E[lower.tri(E, diag = TRUE)] <- NA
+```
+
+```{r node-wise lasso 1,echo=FALSE,warning=FALSE}
+lasso_out <- full_lasso(rvdf, l) 
+E_1 <- find_nw(lasso_out, 'lasso1')
+conf_E1 <- get_confusion_matrix(E_1, E)
+#E_2 <- find_nw(lasso_out, 'lasso2')
+#conf_E2 <- get_confusion_matrix(E_2, E)
+```
+
+```{r roc curve}
+lambda_conf_matrix_1 <- get_lambda_conf_matrix(E, rvdf, lambda, 'lasso1')
+roc_df <- get_ROC(lambda_conf_matrix_1)
+ggplot(roc_df, aes(FPR, TPR)) + geom_line() + geom_point() + 
+  geom_label(aes(label = round(lambda,2)), label.size = 0.005, nudge_x = 0.02, nudge_y = 0.05)
+auroc <- suppressWarnings(auc(roc_df$FPR, roc_df$TPR))
+auroc
+```
+
+```{r, choosing best lambda accuracy}
+accuracy_df <- get_accuracy(lambda_conf_matrix_1)
+ggplot(accuracy_df, aes(lambda, accuracy)) + geom_line()
+```
+
+```{r, choosing best lambda f1}
+f1_df <- get_f1(lambda_conf_matrix_1)
+optimal_lambda <- (f1_df %>% top_n(1, f1_score))#[['lambda']]
+ggplot(f1_df, aes(lambda, f1_score)) + geom_line()
+```
+
+```{r, graphical lasso}
+theta_hat_bool <- find_glasso(rvdf, l = 0.1)
+conf_matrix <- get_confusion_matrix(theta_hat_bool, E)
+```
+
+```{r graphical lasso roc curve}
+lambda_conf_matrix_3 <- get_lambda_conf_matrix(E, rvdf, lambda, 'glasso')
+roc_df <- get_ROC(lambda_conf_matrix_3)
+ggplot(roc_df, aes(FPR, TPR)) + geom_line()
+auroc <- suppressWarnings(auc(roc_df$FPR, roc_df$TPR))
+auroc
+```
+
+```{r,f1_g}
+# out_f1_G <- get_f1_G(lambda)
+# out_f1_G[['optimal_lambda']]
+# out_f1_G[['highest_f1']]
+```
+
+```{r, 50 times replicate}
+# E1_f1 <- c()
+# E2_f1 <- c()
+# E3_f1 <- c()
+# 
+# for (i in 1:50){
+#   rvdf <- generate_rvdf()
+#   E <- (theta!=0)
+#   E[lower.tri(E, diag = TRUE)] <- NA
+#   E1_f1_score <- get_f1(lambda, 'E1')[['highest_f1']]
+#   E2_f1_score <- get_f1(lambda, 'E2')[['highest_f1']]
+#   E3_f1_score <- get_f1_G(lambda)[['highest_f1']]
+#   E1_f1 <- c(E1_f1, E1_f1_score)
+#   E2_f1 <- c(E2_f1, E2_f1_score)
+#   E3_f1 <- c(E3_f1, E3_f1_score)
+# }
+# 
+# E1_f1_score <- get_f1(lambda, 'E1')
+# E1_f1_score
+# ```
