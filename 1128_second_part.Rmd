@@ -1,0 +1,50 @@
+```{r read libraries, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("lib.R")
+```
+
+```{r set parameters}
+set.seed(10)
+n = 100
+p = 50
+q = 0.1 # q controls sparsity, or a probability that two nodes be connected
+#lambda = 10 ^ seq(-1, 0, by = 0.1) # range of lambda for node wise lasso
+lambda = seq(0.1, 2, by=0.1) # range of lambda for graphical lasso
+l = 0.1 # l represents one particular lambda.
+```
+
+```{r, 50 times replicate}
+E1_result <- data.frame()
+E2_result <- data.frame()
+E3_result <- data.frame()
+
+theta <- make_theta(p, q)
+sigma <- inv(theta)
+  
+for (i in 1:50){
+  print(i)
+  rvdf <- generate_rvdf(n, sigma)
+  E <- (theta!=0)
+  E[lower.tri(E, diag = TRUE)] <- NA
+  lambda_conf_matrix_1 <- get_lambda_conf_matrix(E, rvdf, lambda, 'lasso1')
+  lambda_conf_matrix_2 <- get_lambda_conf_matrix(E, rvdf, lambda, 'lasso2')
+  lambda_conf_matrix_3 <- get_lambda_conf_matrix(E, rvdf, lambda, 'glasso')
+  f1_df_1 <- get_f1(lambda_conf_matrix_1)
+  f1_df_2 <- get_f1(lambda_conf_matrix_2)
+  f1_df_3 <- get_f1(lambda_conf_matrix_3)
+  optimal_f1_1 <- (f1_df_1 %>% top_n(1, f1_score))
+  optimal_f1_2 <- (f1_df_2 %>% top_n(1, f1_score))
+  optimal_f1_3 <- (f1_df_3 %>% top_n(1, f1_score))
+  E1_result <- rbind(E1_result, lambda_conf_matrix_1 %>% filter(lambda == optimal_f1_1[['lambda']]))
+  E2_result <- rbind(E2_result, lambda_conf_matrix_2 %>% filter(lambda == optimal_f1_2[['lambda']]))
+  E3_result <- rbind(E3_result, lambda_conf_matrix_3 %>% filter(lambda == optimal_f1_3[['lambda']]))
+}
+write.csv(E1_result, './50_iterate_E1.csv')
+write.csv(E2_result, './50_iterate_E2.csv')
+write.csv(E3_result, './50_iterate_E3.csv')
+#x <- read.csv("50_iterate_E1.csv", row.names = 1) to read the saved csv.
+```
+
+```{r}
+E3_result
+```

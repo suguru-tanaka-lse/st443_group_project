@@ -52,13 +52,13 @@ library(glasso)
 # input: 1) pred_matrix: an upper triangle matrix of estimated coefficients.
 #        2) real_matrix: an upper triangle matrix of real coefficients.
 
-make_theta = function(p){
+make_theta = function(p, q){
   I = diag(p)
   theta = I
   for (row in 1:nrow(I)){
     for (col in 2:ncol(I)){
       if (row < col){
-        theta[row, col] <- sample(x=c(0.5,0),prob=c(0.1,0.9),size=1,replace=T)
+        theta[row, col] <- sample(x=c(0.5,0),prob=c(q, 1-q),size=1,replace=T)
       }
     }
   }

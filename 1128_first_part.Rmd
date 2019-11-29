@@ -1,0 +1,104 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r read libraries, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("lib.R")
+```
+
+```{r set parameters}
+set.seed(10)
+n = 100
+p = 50
+q = 0.1 # q controls sparsity, or a probability that two nodes be connected
+#lambda = 10 ^ seq(-1, 0, by = 0.1) # range of lambda for node wise lasso
+lambda = seq(0.1, 2, by=0.1) # range of lambda for graphical lasso
+l = 0.1 # l represents one particular lambda.
+```
+
+```{r before approaches,echo=FALSE}
+theta <- make_theta(p, q)
+sigma <- inv(theta)
+rvdf <- generate_rvdf(n, sigma)
+# E represends the real connected edge in upper triangle matrix of coefficients
+E <- (theta!=0) 
+E[lower.tri(E, diag = TRUE)] <- NA
+```
+
+```{r node-wise lasso 1 roc curve and auroc}
+lambda_conf_matrix_1 <- get_lambda_conf_matrix(E, rvdf, lambda, 'lasso1')
+lambda_conf_matrix_2 <- get_lambda_conf_matrix(E, rvdf, lambda, 'lasso2')
+lambda_conf_matrix_3 <- get_lambda_conf_matrix(E, rvdf, lambda, 'glasso')
+roc_df_1 <- get_ROC(lambda_conf_matrix_1)
+roc_df_2 <- get_ROC(lambda_conf_matrix_2)
+roc_df_3 <- get_ROC(lambda_conf_matrix_3)
+auroc_1 <- suppressWarnings(auc(roc_df_1$FPR, roc_df_1$TPR))
+auroc_2 <- suppressWarnings(auc(roc_df_2$FPR, roc_df_2$TPR))
+auroc_3 <- suppressWarnings(auc(roc_df_3$FPR, roc_df_3$TPR))
+
+# ggplot(roc_df, aes(FPR, TPR)) + geom_line() + geom_point() +
+#   geom_label(aes(label = round(lambda,2)), label.size = 0.005, nudge_x = 0.02, nudge_y = -0.05)
+
+ggplot() + 
+  geom_line(data = roc_df_1, aes(FPR, TPR), color = "darkgreen") + 
+  geom_line(data = roc_df_2, aes(FPR, TPR), color = "darkblue") +
+  geom_line(data = roc_df_3, aes(FPR, TPR), color = "darkred") +
+  annotate("text", x = 0.8, y = 0.25, color = "darkgreen", label = paste("E1: AUROC = ", round(auroc_1,2))) +
+  annotate("text", x = 0.8, y = 0.20, color = "darkblue", label = paste("E2: AUROC = ", round(auroc_2,2))) +
+  annotate("text", x = 0.8, y = 0.15, color = "darkred", label = paste("E3: AUROC = ", round(auroc_3,2))) +
+  geom_abline(slope = 1, color = "red", linetype = 2) + 
+  labs(title = "ROC curves for nodewise lasso E1 and E2, and graphical lasso") +
+  geom_point() + xlim(0, 1) + ylim(0,1)
+#  geom_label(aes(label = round(lambda,2)), label.size = 0.0001, nudge_x = 0.02, nudge_y = -0.05)
+```
+
+```{r, choosing best lambda accuracy}
+accuracy_df_1 <- get_accuracy(lambda_conf_matrix_1)
+accuracy_df_2 <- get_accuracy(lambda_conf_matrix_2)
+accuracy_df_3 <- get_accuracy(lambda_conf_matrix_3)
+optimal_accuracy_1 <- (accuracy_df_1 %>% top_n(1, accuracy))
+optimal_accuracy_2 <- (accuracy_df_2 %>% top_n(1, accuracy))
+optimal_accuracy_3 <- (accuracy_df_3 %>% top_n(1, accuracy))
+ggplot() + 
+  geom_line(data = accuracy_df_1, aes(lambda, accuracy), color = "darkgreen") +
+  geom_line(data = accuracy_df_2, aes(lambda, accuracy), color = "darkblue") +
+  geom_line(data = accuracy_df_3, aes(lambda, accuracy), color = "darkred") +
+  annotate("text", x = 0.8, y = 0.80, color = "darkgreen", 
+           label = paste("E1: Best Accuracy = ", round(optimal_accuracy_1['accuracy'],2))) +
+  annotate("text", x = 0.8, y = 0.79, color = "darkblue", 
+           label = paste("E2: Best Accuracy = ", round(optimal_accuracy_2['accuracy'],2))) +
+  annotate("text", x = 0.8, y = 0.78, color = "darkred", 
+           label = paste("E2: Best Accuracy = ", round(optimal_accuracy_3['accuracy'],2))) +
+  labs(title = "Accuracy of lasso E1 and E2 for different lambda")
+```
+
+```{r graphical lasso roc curve}
+f1_df_1 <- get_f1(lambda_conf_matrix_1)
+f1_df_2 <- get_f1(lambda_conf_matrix_2)
+f1_df_3 <- get_f1(lambda_conf_matrix_3)
+optimal_f1_1 <- (f1_df_1 %>% top_n(1, f1_score))
+optimal_f1_2 <- (f1_df_2 %>% top_n(1, f1_score))
+optimal_f1_3 <- (f1_df_3 %>% top_n(1, f1_score))
+ggplot() + 
+  geom_line(data = f1_df_1, aes(lambda, f1_score), color = "darkgreen") +
+  geom_line(data = f1_df_2, aes(lambda, f1_score), color = "darkblue") +
+  geom_line(data = f1_df_3, aes(lambda, f1_score), color = "darkred") +
+  annotate("text", x = 0.8, y = 0.80, color = "darkgreen", 
+           label = paste("E1: Best f1 = ", round(optimal_f1_1['f1_score'],2))) +
+  annotate("text", x = 0.8, y = 0.79, color = "darkblue", 
+           label = paste("E2: Best f1 = ", round(optimal_f1_2['f1_score'],2))) +
+  annotate("text", x = 0.8, y = 0.78, color = "darkred", 
+           label = paste("E2: Best f1 = ", round(optimal_f1_3['f1_score'],2))) +
+  labs(title = "f1 of lasso E1 and E2 for different lambda")
+```
+
+```{r,f1_g}
+False_count_1 <- lambda_conf_matrix_1 %>% filter(lambda == optimal_f1_1[['lambda']]) %>% select(c(FP, FN))
+False_count_2 <- lambda_conf_matrix_2 %>% filter(lambda == optimal_f1_2[['lambda']]) %>% select(c(FP, FN))
+False_count_3 <- lambda_conf_matrix_3 %>% filter(lambda == optimal_f1_3[['lambda']]) %>% select(c(FP, FN))
+False_count <- rbind(False_count_1, False_count_2, False_count_3)
+rownames(False_count) <- c("node_wise1", "node_wise2", "glasso")
+False_count
+```
