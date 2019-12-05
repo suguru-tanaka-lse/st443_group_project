@@ -1,0 +1,139 @@
+```{r read libraries, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+suppressMessages(source("lib.R"))
+```
+
+```{r set parameters}
+set.seed(10)
+n = 100
+p = 50
+q = 0.1 # q controls sparsity, or a probability that two nodes be connected
+#lambda = 10 ^ seq(-1, 0, by = 0.1) # range of lambda for node wise lasso
+lambda = seq(0.1, 2, by=0.1) # range of lambda for graphical lasso
+l = 0.1 # l represents one particular lambda.
+```
+
+```{r, 50 times replicate}
+E1_result <- data.frame()
+E2_result <- data.frame()
+E3_result <- data.frame()
+
+theta <- make_theta(p, q)
+sigma <- inv(theta)
+E <- (theta!=0)
+E[lower.tri(E, diag = TRUE)] <- NA
+  
+for (i in 1:50){
+  print(i)
+  rvdf <- generate_rvdf(n, sigma)
+  lambda_conf_matrix_1 <- get_lambda_conf_matrix(E, rvdf, lambda, 'lasso1')
+  lambda_conf_matrix_2 <- get_lambda_conf_matrix(E, rvdf, lambda, 'lasso2')
+  lambda_conf_matrix_3 <- get_lambda_conf_matrix(E, rvdf, lambda, 'glasso')
+  f1_df_1 <- get_f1(lambda_conf_matrix_1)
+  f1_df_2 <- get_f1(lambda_conf_matrix_2)
+  f1_df_3 <- get_f1(lambda_conf_matrix_3)
+  optimal_f1_1 <- (f1_df_1 %>% top_n(1, f1_score))
+  optimal_f1_2 <- (f1_df_2 %>% top_n(1, f1_score))
+  optimal_f1_3 <- (f1_df_3 %>% top_n(1, f1_score))
+  E1_result <- rbind(E1_result, lambda_conf_matrix_1 %>%
+    filter(lambda == optimal_f1_1[['lambda']]))
+  E2_result <- rbind(E2_result, lambda_conf_matrix_2 %>% 
+    filter(lambda == optimal_f1_2[['lambda']]))
+  E3_result <- rbind(E3_result, lambda_conf_matrix_3 %>% 
+    filter(lambda == optimal_f1_3[['lambda']]))
+}
+write.csv(E1_result, './50_iterate_E1.csv')
+write.csv(E2_result, './50_iterate_E2.csv')
+write.csv(E3_result, './50_iterate_E3.csv')
+#x <- read.csv("50_iterate_E1.csv", row.names = 1) to read the saved csv.
+```
+
+```{r}
+E3_result 
+```
+
+```{r N versus Computation Time, False postive and False negative}
+set.seed(10)
+N_result_df <- data.frame()
+
+n_seq <- seq(50, 1000, 50)
+theta <- make_theta(p, q)
+sigma <- inv(theta)
+E <- (theta!=0)
+E[lower.tri(E, diag = TRUE)] <- NA
+
+for (method in c('lasso1', 'lasso2', 'glasso')){
+  for (n in n_seq ) {
+    print(n)
+    rvdf <- generate_rvdf(n, sigma)
+    start_time <- as.numeric(Sys.time())
+    lambda_conf_matrix <- get_lambda_conf_matrix(E, rvdf, lambda, method)
+    f1_df <- get_f1(lambda_conf_matrix)
+    optimal_f1 <- (f1_df %>% top_n(1, f1_score))
+    N_result <- lambda_conf_matrix %>% filter(lambda == optimal_f1[['lambda']])
+    end_time <- as.numeric(Sys.time())
+    N_result['n'] <- n
+    N_result['method'] <- method
+    N_result['time'] <- end_time - start_time
+    N_result_df <- rbind(N_result_df, N_result)
+  }
+}
+write.csv(N_result_df, './iterate_by_n.csv')
+```
+
+```{r P versus Computation Time, False postive and False negative}
+set.seed(10)
+P_result_df <- data.frame()
+p_seq <- seq(30, 200, 10)
+
+for (method in c('lasso1', 'lasso2', 'glasso')){
+  print(method)
+  for (p in p_seq) {
+    print(p)
+    theta <- make_theta(p, q)
+    sigma <- inv(theta)
+    E <- (theta!=0)
+    E[lower.tri(E, diag = TRUE)] <- NA
+    rvdf <- generate_rvdf(n, sigma)
+    start_time <- as.numeric(Sys.time())
+    lambda_conf_matrix <- get_lambda_conf_matrix(E, rvdf, lambda, method)
+    f1_df <- get_f1(lambda_conf_matrix)
+    optimal_f1 <- (f1_df %>% top_n(1, f1_score))
+    P_result <- lambda_conf_matrix %>% filter(lambda == optimal_f1[['lambda']])
+    end_time <- as.numeric(Sys.time())
+    P_result['p'] <- p
+    P_result['method'] <- method
+    P_result['time'] <- end_time - start_time
+    P_result_df <- rbind(P_result_df, P_result)
+  }
+}
+write.csv(P_result_df, './iterate_by_p.csv')
+```
+
+```{r Q (sparsity) versus Computation Time, False postive and False negative}
+Q_result_df <- data.frame()
+q_seq <- seq(0.1, 0.9, 0.05)
+
+for (method in c('lasso1', 'lasso2', 'glasso')){
+  print(method)
+  for (q in q_seq) {
+    print(q)
+    theta <- make_theta(p, q)
+    sigma <- inv(theta)
+    E <- (theta!=0)
+    E[lower.tri(E, diag = TRUE)] <- NA
+    rvdf <- generate_rvdf(n, sigma)
+    start_time <- as.numeric(Sys.time())
+    lambda_conf_matrix <- get_lambda_conf_matrix(E, rvdf, lambda, method)
+    f1_df <- get_f1(lambda_conf_matrix)
+    optimal_f1 <- (f1_df %>% top_n(1, f1_score))
+    Q_result <- lambda_conf_matrix %>% filter(lambda == optimal_f1[['lambda']])
+    end_time <- as.numeric(Sys.time())
+    Q_result['q'] <- q
+    Q_result['method'] <- method
+    Q_result['time'] <- end_time - start_time
+    Q_result_df <- rbind(Q_result_df, Q_result)
+  }
+}
+write.csv(Q_result_df, './iterate_by_q.csv')
+```

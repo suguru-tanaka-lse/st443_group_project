@@ -1,0 +1,36 @@
+```{r read libraries, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+suppressMessages(source("lib.R"))
+suppressMessages(library(ggpubr))
+```
+
+```{r 50 iteration result}
+E1_result <- read.csv("50_iterate_E1.csv", row.names = 1)
+E2_result <- read.csv("50_iterate_E2.csv", row.names = 1)
+E3_result <- read.csv("50_iterate_E3.csv", row.names = 1)
+E1_result <- cbind(E1_result, get_recovery(E1_result))
+E2_result <- cbind(E2_result, get_recovery(E2_result))
+E3_result <- cbind(E3_result, get_recovery(E3_result))
+E1_result['method'] <- 'lasso1'
+E2_result['method'] <- 'lasso2'
+E3_result['method'] <- 'glasso'
+result <- rbind(E1_result, E2_result, E3_result)
+p <- ggplot(result, aes(x = method, y=FPR, col = method)) +
+  geom_boxplot(show.legend = FALSE)
+q <- ggplot(result, aes(x = method, y=FNR, col = method)) +
+  geom_boxplot(show.legend = FALSE)
+ggarrange(p, q,  ncol = 2)
+```
+
+```{r N vs Computation Time and recovery}
+n_result <- read.csv("iterate_by_n.csv", row.names = 1)
+n_result <- cbind(n_result, get_recovery(n_result))
+p <- ggplot(n_result, aes(x = n, y = FPR, col = method)) +
+  geom_line()
+q <- ggplot(n_result, aes(x = n, y = FNR, col = method)) +
+  geom_line()
+r <- ggplot(n_result, aes(x = n, y = time, group = method, col = method)) +
+  geom_line()
+
+ggarrange(p, q,  r, ncol = 2, nrow=2)
+```

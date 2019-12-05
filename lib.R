@@ -196,6 +196,16 @@ get_ROC = function(lambda_conf_matrix){
   return(result_df)
 }
 
+get_recovery <- function(lambda_conf_matrix){
+  lcm <- lambda_conf_matrix
+  FPR_result <- lcm$FP / (lcm$FP + lcm$FN)
+  FNR_result <- lcm$FN / (lcm$FN + lcm$TP)
+  result_matrix <- t(rbind(FPR_result, FNR_result))
+  result_df <- as.data.frame(result_matrix)
+  colnames(result_df) <- c("FPR", "FNR")
+  return(result_df)
+}
+
 get_accuracy = function(lambda_conf_matrix){
   lcm <- lambda_conf_matrix
   accuracy <- (lcm$TP + lcm$TN) / (lcm$TP + lcm$FN + lcm$TN +lcm$FP)
