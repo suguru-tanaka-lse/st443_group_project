@@ -1,0 +1,105 @@
+```{r read libraries, include=FALSE}
+suppressMessages(source("lib.R"))
+```
+
+```{r set parameters}
+set.seed(1)
+n = 200
+p = 50
+q = 0.1 # q controls sparsity, or a probability that two nodes be connected
+lambda_series <- seq(0.025, 0.5, 0.025) # Tuning parameters
+model_set <- c('lasso1', 'lasso2', 'glasso')
+```
+
+```{r, 50 times replicate}
+set.seed(1)
+result_df <- data.frame()
+theta <- make_theta(p, q)
+sigma <- inv(theta)
+E <- get_true_edge(theta)
+
+for (i in 1:50){
+  print(i)
+  rv <- generate_rv(n, sigma)
+  for (method in model_set){
+    cv_conf_matrix <- get_cv_conf_matrix(E, rv, lambda_series, method)
+    result_df <- rbind(result_df, cv_conf_matrix)
+  }
+}
+write.csv(result_df, './50_iterate.csv')
+#x <- read.csv("50_iterate.csv", row.names = 1) to read the saved csv.
+```
+```{r N versus Computation Time, False postive and False negative}
+set.seed(1)
+N_result_df <- data.frame()
+n_seq <- seq(50, 2050, 100)
+theta <- make_theta(p, q)
+sigma <- inv(theta)
+E <- get_true_edge(theta)
+
+for (method in model_set){
+  print(method)
+  for (n in n_seq ) {
+    print(n)
+    rv <- generate_rv(n, sigma)
+    start_time <- as.numeric(Sys.time())
+    cv_conf_matrix <- get_cv_conf_matrix(E, rv, lambda_series, method)
+    end_time <- as.numeric(Sys.time())
+    cv_conf_matrix['n'] <- n
+    cv_conf_matrix['time'] <- end_time - start_time
+    N_result_df <- rbind(N_result_df, cv_conf_matrix)
+  }
+}
+write.csv(N_result_df, './iterate_by_n.csv')
+```
+
+```{r P versus Computation Time, False postive and False negative}
+set.seed(1)
+P_result_df <- data.frame()
+n = 200
+p_seq <- seq(10, 150, 10)
+
+for (method in model_set){
+  print(method)
+  for (p in p_seq) {
+    print(p)
+    theta <- make_theta(p, q)
+    sigma <- inv(theta)
+    E <- get_true_edge(theta)
+    rv <- generate_rv(n, sigma)
+    start_time <- as.numeric(Sys.time())
+    cv_conf_matrix <- get_cv_conf_matrix(E, rv, lambda_series, method)
+    end_time <- as.numeric(Sys.time())
+    cv_conf_matrix['p'] <- p
+    cv_conf_matrix['time'] <- end_time - start_time
+    P_result_df <- rbind(P_result_df, cv_conf_matrix)
+  }
+}
+write.csv(P_result_df, './iterate_by_p.csv')
+```
+
+```{r Q (sparsity) versus Computation Time, False postive and False negative}
+set.seed(1)
+Q_result_df <- data.frame()
+n <- 200
+p <- 50
+q_seq <- seq(0.1, 0.9, 0.05)
+
+for (method in model_set){
+  print(method)
+  for (q in q_seq) {
+    print(q)
+    theta <- make_theta(p, q)
+    sigma <- inv(theta)
+    E <- get_true_edge(theta)
+    rv <- generate_rv(n, sigma)
+    start_time <- as.numeric(Sys.time())
+    cv_conf_matrix <- get_cv_conf_matrix(E, rv, lambda_series, method)
+    end_time <- as.numeric(Sys.time())
+    cv_conf_matrix['q'] <- q
+    cv_conf_matrix['time'] <- end_time - start_time
+    Q_result_df <- rbind(Q_result_df, cv_conf_matrix)
+  }
+}
+write.csv(Q_result_df, './iterate_by_q.csv')
+```

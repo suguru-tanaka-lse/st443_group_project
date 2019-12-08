@@ -1,0 +1,53 @@
+```{r read libraries, include=FALSE}
+suppressMessages(source("lib.R"))
+```
+
+```{r 50 iteration result}
+result <- read.csv("50_iterate.csv", row.names = 1)
+result <- cbind(result, get_recovery(result), get_accuracy(result))
+plot_FPR <- ggplot(result, aes(x = method, y=FPR, col = method)) +
+  geom_boxplot(show.legend = FALSE)
+plot_FNR <- ggplot(result, aes(x = method, y=FNR, col = method)) +
+  geom_boxplot(show.legend = FALSE)
+plot_accuracy <- ggplot(result, aes(x = method, y=accuracy, col = method)) +
+  geom_boxplot(show.legend = FALSE)
+ggarrange(plot_FPR, plot_FNR, plot_accuracy, ncol = 2, nrow = 2)
+```
+
+```{r N vs Computation Time and recovery}
+n_result <- read.csv("iterate_by_n.csv", row.names = 1)
+n_result <- cbind(n_result, get_recovery(n_result))
+plot_N_FPR <- ggplot(n_result, aes(x = n, y = FPR, col = method)) +
+  geom_line()
+plot_N_FNR <- ggplot(n_result, aes(x = n, y = FNR, col = method)) +
+  geom_line()
+plot_N_time <- ggplot(n_result, aes(x = n, y = time, group = method, col = method)) +
+  geom_line()
+ggarrange(plot_N_FPR, plot_N_FNR, plot_N_time, ncol = 2, nrow=2)
+```
+
+```{r P vs Computation Time and recovery}
+p_result <- read.csv("iterate_by_p.csv", row.names = 1)
+p_result <- cbind(p_result, get_recovery(p_result))
+plot_P_FPR <- ggplot(p_result, aes(x = p, y = FPR, col = method)) +
+  geom_line()
+plot_P_FNR <- ggplot(p_result, aes(x = p, y = FNR, col = method)) +
+  geom_line()
+plot_P_time <- ggplot(p_result, aes(x = p, y = time, group = method, col = method)) +
+  geom_line()
+
+ggarrange(plot_P_FPR, plot_P_FNR,  plot_P_time, ncol = 2, nrow=2)
+```
+
+```{r Q vs Computation Time and recovery}
+q_result <- read.csv("iterate_by_q.csv", row.names = 1)
+q_result <- cbind(q_result, get_recovery(q_result))
+plot_Q_FPR <- ggplot(q_result, aes(x = q, y = FPR, col = method)) +
+  geom_line()
+plot_Q_FNR <- ggplot(q_result, aes(x = q, y = FNR, col = method)) +
+  geom_line()
+plot_Q_time <- ggplot(q_result, aes(x = q, y = time, group = method, col = method)) +
+  geom_line()
+
+ggarrange(plot_Q_FPR, plot_Q_FNR, plot_Q_time, ncol = 2, nrow=2)
+```
