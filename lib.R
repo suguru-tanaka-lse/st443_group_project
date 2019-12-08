@@ -110,16 +110,70 @@ node_wise_lasso=function(rv, lambda){
   colnames(pred) = paste(",",1:p,")",sep="") 
   return(pred)
 }
-graphical_lasso <- function(rv, lambda){
+
+# graphical_lasso <- function(rv, lambda){ # BIC
+#   sigma_hat <- cov(rv)
+#   if (length(lambda) > 1) {
+#     #theta_hat <- CVglasso(rv, lam = lambda, trace = "none")$Omega
+#     bic <- c()
+#     for (l in lambda) {
+#       tmp_model <- glasso(sigma_hat, rho = l, nobs = nrow(rv))
+#       p_off_d <- sum(tmp_model$wi != 0 & col(sigma_hat) < row(sigma_hat))
+#       bic  <- c(bic, -2*(tmp_model$loglik) + p_off_d*log(n))
+#     }
+#     best <- which.min(bic)
+#     lambda_bic <- data.frame(lambda, bic)
+#     best_model <- glasso(sigma_hat, rho = lambda[best])
+#     theta_hat <- best_model$wi
+#   } else {
+#     glasso_out <- glasso(sigma_hat, lambda)
+#     theta_hat <- glasso_out$wi
+#   }
+#   return(theta_hat)
+# }
+
+# graphical_lasso <- function(rv, lambda){ # Loglikelihood
+#   sigma_hat <- cov(rv)
+#   if (length(lambda) > 1) {
+#     #theta_hat <- CVglasso(rv, lam = lambda, trace = "none")$Omega
+#     bic <- c()
+#     for (l in lambda) {
+#       tmp_model <- glasso(sigma_hat, rho = l, nobs = nrow(rv))
+#       p_off_d <- sum(tmp_model$wi != 0 & col(sigma_hat) < row(sigma_hat))
+#       bic  <- c(bic, tmp_model$loglik)
+#     }
+#     best <- which.max(bic)
+#     lambda_bic <- data.frame(lambda, bic)
+#     best_model <- glasso(sigma_hat, rho = lambda[best])
+#     theta_hat <- best_model$wi
+#   } else {
+#     glasso_out <- glasso(sigma_hat, lambda)
+#     theta_hat <- glasso_out$wi
+#   }
+#   return(theta_hat)
+# }
+
+graphical_lasso <- function(rv, lambda){ #AIC
+  sigma_hat <- cov(rv)
   if (length(lambda) > 1) {
-    theta_hat <- CVglasso(rv, lam = lambda, trace = "none")$Omega
+    #theta_hat <- CVglasso(rv, lam = lambda, trace = "none")$Omega
+    bic <- c()
+    for (l in lambda) {
+      tmp_model <- glasso(sigma_hat, rho = l, nobs = nrow(rv))
+      p_off_d <- sum(tmp_model$wi != 0 & col(sigma_hat) < row(sigma_hat))
+      bic  <- c(bic, -2*(tmp_model$loglik) + p_off_d)
+    }
+    best <- which.min(bic)
+    lambda_bic <- data.frame(lambda, bic)
+    best_model <- glasso(sigma_hat, rho = lambda[best])
+    theta_hat <- best_model$wi
   } else {
-    sigma_hat <- cov(rv)
     glasso_out <- glasso(sigma_hat, lambda)
     theta_hat <- glasso_out$wi
   }
   return(theta_hat)
 }
+
 get_true_edge <- function(theta){
   E <- (theta!=0) 
   E[lower.tri(E, diag = TRUE)] <- NA
