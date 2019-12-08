@@ -1,0 +1,58 @@
+```{r, read files}
+suppressMessages(source("lib.R"))
+```
+
+```{r, set parameters}
+set.seed(1)
+p <- 50 # Number of nodes
+q <- 0.1 # Sparsity of graph
+n <- 200 # Number of samples
+lambda_series <- seq(0, 0.5, 0.025) # Tuning parameters
+model_set <- c('lasso1', 'lasso2', 'glasso')
+```
+
+```{r, set model}
+set.seed(1)
+theta <- make_theta(p, q)
+sigma <- inv(theta)
+rv <- generate_rv(n, sigma)
+E <- get_true_edge(theta)
+```
+
+```{r, apply models for range of lambdas}
+set.seed(1)
+lambda_conf_matrix_df <- data.frame()
+lambda_tpr_fpr_df <- data.frame()
+auroc_series <- c()
+for (method in model_set) {
+  lambda_conf_matrix <- make_lambda_conf_matrix(E, rv, lambda_series, method)
+  lambda_tpr_fpr <- get_tpr_fpr(lambda_conf_matrix)
+  auroc <- suppressWarnings(auc(lambda_tpr_fpr$FPR, lambda_tpr_fpr$TPR))
+  lambda_conf_matrix_df <- rbind(lambda_conf_matrix_df, lambda_conf_matrix)
+  lambda_tpr_fpr_df <- rbind(lambda_tpr_fpr_df, lambda_tpr_fpr)
+  auroc_series <- c(auroc_series, auroc)
+}
+
+ggplot(data = lambda_tpr_fpr_df, aes(FPR, TPR, colour = method)) +
+  geom_point() +
+  geom_path() +
+  #geom_text(aes(label=round(lambda,2)),hjust=0, vjust=0) +
+  annotate("text", x = 0.8, y = 0.25, color = "darkgreen", label = paste("E1: AUROC = ", round(auroc_series[1],2))) +
+  annotate("text", x = 0.8, y = 0.20, color = "darkblue", label = paste("E2: AUROC = ", round(auroc_series[2],2))) +
+  annotate("text", x = 0.8, y = 0.15, color = "darkred", label = paste("E3: AUROC = ", round(auroc_series[3],2))) +
+  geom_abline(slope = 1, color = "red", linetype = 2) + 
+  labs(title = "ROC curves for nodewise lasso E1 and E2, and graphical lasso E3") +
+  xlim(0, 1) + ylim(0,1)
+
+```
+
+```{r, choosing best lambda}
+set.seed(1)
+cv_conf_matrix_df <- data.frame()
+for (method in model_set){
+  cv_conf_matrix <- get_cv_conf_matrix(E, rv, lambda_series[lambda_series >0], method)
+  cv_conf_matrix_df <- rbind(cv_conf_matrix_df, cv_conf_matrix)
+}
+cv_conf_matrix_df
+```
+
